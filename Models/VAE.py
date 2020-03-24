@@ -3,7 +3,7 @@ import pandas as pd
 import os.path
 import pickle
 
-from Models.RBM_TF_2 import *
+from Models.RBM_TF_2 import RBM, RBM_Linear
 
 from keras.layers import Input, Dense, Flatten, Lambda, Reshape
 from keras.models import Model
@@ -27,8 +27,8 @@ class VariationalAutoencoder:
 
         self.latent_dim = layer_dims[-1]
         self.v_dim      = layer_dims[0]
-        self.num_hidden_layers = len(layer_dims)-1
-        self.layer_dims = layer_dims            
+        self.num_hidden_layers = len(layer_dims)-2
+        self.layer_dims = layer_dims[0:-1]          
 
         self.W = []
         self.b = []
@@ -79,18 +79,21 @@ class VariationalAutoencoder:
         for i in range(self.num_hidden_layers): # initialize RBM's
             if (i < self.num_hidden_layers - 1):
                 RBM_layers.append(RBM(self.layer_dims[i],self.layer_dims[i+1]))
+            
             else:
                 RBM_layers.append(RBM_Linear(self.layer_dims[i],self.layer_dims[i+1]))
         
         for i in range(self.num_hidden_layers):  # train RBM's 
-            print("Training RBM layer %i"%(i+1))
+            print(f"Training RBM layer {i+1}, size: {self.layer_dims[i]}")
 
             RBM_layers[i].train(x,epochs) # train the ith RBM
             
             if not(i == self.num_hidden_layers - 1): # generate samples to train next layer
+                
                 _ , x = RBM_layers[i].gibbs_sampling(2,num_samples) 
 
             _W, _a, _b = RBM_layers[i].get_weights()
+
             self.W.append(_W) # save trained weights
             self.b.append(_b)
             self.a.append(_a)
@@ -108,21 +111,25 @@ class VariationalAutoencoder:
             Returns the keras model
         '''
         if self.pretrained == False:
+            
             print("Model not pretrained.")
             return
 
         # define keras model structure
         encoder_input = Input(shape=(self.v_dim,), name='encoder_input')
+        
         x = encoder_input
         
         # build encoder 
         for i in range(self.num_hidden_layers):            
             weights = [self.W[i],self.b[i].flatten()]
+            
             if (i == self.num_hidden_layers - 1):
                 dense_layer = Dense(self.layer_dims[i+1],  
                                     weights = weights, 
                                     name = 'encoder_dense_' + str(i))
                 x = dense_layer(x)
+            
             else:
                 dense_layer = Dense(self.layer_dims[i+1], 
                                     activation='sigmoid',
@@ -132,8 +139,6 @@ class VariationalAutoencoder:
 
         #Build the Latent Sampling
         shape_before_flattening = K.int_shape(x)[1:]
-
-        #x = Flatten()(x)
         
         self.mu = Dense(self.latent_dim, name='mu')(x)
         self.log_var = Dense(self.latent_dim, name='log_var')(x)
@@ -155,7 +160,7 @@ class VariationalAutoencoder:
         decoder_input = Input(shape=(self.latent_dim,), name='decoder_input')
 
         x = Dense(np.prod(shape_before_flattening))(decoder_input)
-        x = Reshape(shape_before_flattening)(x)        
+        #x = Reshape(shape_before_flattening)(x)        
 
         # build decoder
       
