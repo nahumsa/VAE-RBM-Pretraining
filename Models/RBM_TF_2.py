@@ -12,6 +12,8 @@ import numpy as np
 
 from tqdm import trange
 
+tf.compat.v1.disable_eager_execution()
+
 def sample_bernoulli(probs):
     return tf.nn.relu(tf.sign(probs - tf.random.uniform(tf.shape(input=probs))))
 
@@ -128,12 +130,40 @@ class RBM_base:
     def partial_fit(self, batch_x):
         self.sess.run(self.update_weights + self.update_deltas, feed_dict={self.x: batch_x})
 
+    def gibbs_sampling(self, n=1, m=1, v=None):
+        """Gibbs sampling.
+        
+        Keyword Arguments:
+            n {int} -- Number of iterations of the Gibbs Sampling (default: {1})
+            m {int} -- Numbers of samples generated (default: {1})            
+            v {np.array} -- Array of visible units (default: {None})
+        
+        Returns:
+            [type] -- [description]
+        """
+
+        if v is None:
+            v_probs = np.full((m,self.n_visible),0.5)
+            v = np.random.binomial(1,v_probs)
+        
+        h_probs  = self.transform(v)
+        h_states = np.random.binomial(1,h_probs)
+
+        for i in range(n):
+            v_probs  = self.transform_inv(h_states)
+            v_states = np.random.binomial(1,v_probs)
+            
+            h_probs  = self.transform(v_states)
+            h_states = np.random.binomial(1,h_probs)
+        
+        return v_states, h_states
+
     def train(self,
             data_x,
             n_epoches=10,
             batch_size=10,
             shuffle=True,
-            verbose=True):
+            verbose=False):
         
         assert n_epoches > 0
 
@@ -167,7 +197,10 @@ class RBM_base:
                 np.random.shuffle(inds)
                 data_x_cpy = data_x_cpy[inds]
 
-            r_batches = trange(n_batches)            
+            if verbose:
+                r_batches = trange(n_batches)            
+            else:
+                r_batches = range(n_batches)
             
             for b in r_batches:
                 batch_x = data_x_cpy[b * batch_size:(b + 1) * batch_size]
